@@ -531,7 +531,7 @@ export default function JobTracker() {
       {view==="table"&&(
         <div style={{padding:"0 28px 28px"}}>
           <div style={{display:"grid",gridTemplateColumns:"32px 1fr 1.2fr 100px 120px 110px 1fr 80px",padding:"8px 12px",borderBottom:`1px solid ${t.border}`,fontSize:"9px",color:t.textGhost,letterSpacing:"0.12em",alignItems:"center"}}>
-            <div><input type="checkbox" checked={filtered.length>0&&selected.size===filtered.length} onChange={toggleSelectAll}/></div>
+            <div style={{display:"flex",alignItems:"center"}}><input type="checkbox" checked={filtered.length>0&&selected.size===filtered.length} onChange={toggleSelectAll}/></div>
             <div>COMPANY</div><div>ROLE</div><div>DATE</div><div>STATUS</div><div>SOURCE</div><div>NOTES</div><div></div>
           </div>
           {filtered.length===0&&<div style={{textAlign:"center",padding:"40px",color:t.emptyText,fontSize:"12px",letterSpacing:"0.1em"}}>NO APPLICATIONS YET — HIT + ADD ROLE</div>}
