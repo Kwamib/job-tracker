@@ -12,6 +12,30 @@ const STATUS_CONFIG = {
 
 const SOURCES = ["LinkedIn", "Company Site", "Referral", "Indeed", "Recruiter", "Other"];
 
+const ENTRY_TAGS = [
+  { id: "applied",    label: "Applied",    icon: "📨", color: "#4A9EFF" },
+  { id: "call",       label: "Call",       icon: "📞", color: "#4CD964" },
+  { id: "email",      label: "Email",      icon: "💬", color: "#A855F7" },
+  { id: "interview",  label: "Interview",  icon: "🎯", color: "#F5A623" },
+  { id: "task",       label: "Task",       icon: "📋", color: "#FF8C42" },
+  { id: "offer",      label: "Offer",      icon: "💰", color: "#4CD964" },
+  { id: "rejection",  label: "Rejection",  icon: "❌", color: "#FF453A" },
+  { id: "note",       label: "Note",       icon: "📝", color: "#8E8E93" },
+];
+
+const TAG_BY_ID = Object.fromEntries(ENTRY_TAGS.map(t => [t.id, t]));
+
+function formatEntryTime(iso) {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const sameYear = d.getFullYear() === now.getFullYear();
+    const date = d.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return `${date} · ${time}`;
+  } catch { return iso; }
+}
+
 const THEME = {
   dark: {
     bg:"#0A0A0F",surface:"#111118",surface2:"#16161F",border:"#1C1C2A",borderStrong:"#2C2C3A",
@@ -158,18 +182,41 @@ function Toast({ message, color, onDone }) {
   );
 }
 
-const STORAGE_KEY = "job-tracker-v1";
+const STORAGE_KEY = "job-tracker-v2";
 const SETTINGS_KEY = "job-tracker-settings-v1";
 
-const defaultJobs = [
-  {id:1,company:"Company 1",role:"Role 1",date:"2026-04-01",status:"Applied",source:"LinkedIn",notes:"Add your notes here",salary:"$000k",location:"Remote"},
-  {id:2,company:"Company 2",role:"Role 2",date:"2026-04-02",status:"Interviewing",source:"Company Site",notes:"Add your notes here",salary:"$000k",location:"Remote"},
-  {id:3,company:"Company 3",role:"Role 3",date:"2026-04-03",status:"Rejected",source:"Referral",notes:"Add your notes here",salary:"$000k",location:"Hybrid"},
-  {id:4,company:"Company 4",role:"Role 4",date:"2026-04-04",status:"Ghosted",source:"Indeed",notes:"Add your notes here",salary:"$000k",location:"Onsite"},
-];
+const defaultJobs = [];
+
+function migrateJob(j) {
+  // v1 → v2: convert single notes string to entries array
+  if (Array.isArray(j.entries)) return j;
+  const entries = [];
+  if (j.notes && typeof j.notes === "string" && j.notes.trim()) {
+    entries.push({
+      id: `migrated-${j.id}`,
+      timestamp: j.date ? new Date(j.date).toISOString() : new Date().toISOString(),
+      tag: "note",
+      text: j.notes.trim(),
+    });
+  }
+  const { notes, ...rest } = j;
+  void notes;
+  return { ...rest, entries };
+}
 
 function loadJobs() {
-  try { const d=localStorage.getItem(STORAGE_KEY); return d?JSON.parse(d):defaultJobs; } catch { return defaultJobs; }
+  try {
+    const d = localStorage.getItem(STORAGE_KEY);
+    if (d) return JSON.parse(d).map(migrateJob);
+    // one-time migration from v1 storage
+    const old = localStorage.getItem("job-tracker-v1");
+    if (old) {
+      const migrated = JSON.parse(old).map(migrateJob);
+      // don't auto-import demo data; leave that to the user
+      return migrated.filter(j => !/^Company \d+$/i.test(j.company));
+    }
+    return defaultJobs;
+  } catch { return defaultJobs; }
 }
 function saveJobs(jobs) {
   try { localStorage.setItem(STORAGE_KEY,JSON.stringify(jobs)); } catch {}
@@ -181,9 +228,170 @@ function saveSettings(s) {
   try { localStorage.setItem(SETTINGS_KEY,JSON.stringify(s)); } catch {}
 }
 
-const emptyForm = {company:"",role:"",date:new Date().toISOString().split("T")[0],status:"Applied",source:"LinkedIn",notes:"",salary:"",location:""};
+const emptyForm = {company:"",role:"",date:new Date().toISOString().split("T")[0],status:"Applied",source:"LinkedIn",entries:[],salary:"",location:""};
+
+const REQUIRED_FIELDS = ["company", "role", "date", "status", "source"];
+function validateForm(form) {
+  const errors = {};
+  REQUIRED_FIELDS.forEach(f => {
+    if (!form[f] || (typeof form[f] === "string" && !form[f].trim())) {
+      errors[f] = "Required";
+    }
+  });
+  return errors;
+}
 
 let nextId = Date.now();
+
+function ActivityLog({ entries, onAdd, onDelete, theme, compact = false }) {
+  const t = theme;
+  const [tag, setTag] = useState("note");
+  const [text, setText] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
+
+  const sorted = [...(entries || [])].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  const submit = () => {
+    if (!text.trim()) return;
+    if (onAdd(tag, text)) {
+      setText("");
+      setTag("note");
+    }
+  };
+
+  const tagInfo = TAG_BY_ID[tag] || TAG_BY_ID.note;
+
+  return (
+    <div>
+      {/* Composer */}
+      <div style={{ background: t.inputBg, border: `1px solid ${t.borderStrong}`, borderRadius: "8px", padding: "10px", marginBottom: "12px", position: "relative" }}>
+        <div style={{ display: "flex", gap: "6px", alignItems: "stretch", marginBottom: "8px" }}>
+          <button
+            type="button"
+            onClick={() => setShowPicker(p => !p)}
+            style={{
+              background: tagInfo.color + "18",
+              border: `1px solid ${tagInfo.color}50`,
+              color: tagInfo.color,
+              borderRadius: "6px",
+              padding: "0 10px",
+              fontSize: "11px",
+              fontFamily: "'IBM Plex Mono',monospace",
+              letterSpacing: "0.04em",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}>
+            <span>{tagInfo.icon}</span>
+            <span>{tagInfo.label}</span>
+            <span style={{ opacity: 0.6, fontSize: "9px" }}>▾</span>
+          </button>
+        </div>
+        {showPicker && (
+          <div style={{
+            position: "absolute", top: "44px", left: "10px", zIndex: 50,
+            background: t.surface, border: `1px solid ${t.borderStrong}`, borderRadius: "8px",
+            padding: "6px", display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "4px",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: "220px",
+          }}>
+            {ENTRY_TAGS.map(et => (
+              <button key={et.id} type="button" onClick={() => { setTag(et.id); setShowPicker(false); }}
+                style={{
+                  background: tag === et.id ? et.color + "22" : "transparent",
+                  border: `1px solid ${tag === et.id ? et.color + "60" : "transparent"}`,
+                  borderRadius: "5px", padding: "7px 9px", textAlign: "left",
+                  fontSize: "11px", color: et.color, fontFamily: "'IBM Plex Mono',monospace",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+                }}>
+                <span>{et.icon}</span><span>{et.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit(); }}
+          placeholder="Add a note, log a call, capture an interview..."
+          rows={compact ? 2 : 3}
+          style={{
+            width: "100%", background: "transparent", border: "none", outline: "none",
+            color: t.text, fontSize: "12px", fontFamily: "'IBM Plex Mono',monospace",
+            resize: "vertical", lineHeight: 1.5, padding: "4px 2px",
+          }}/>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+          <span style={{ fontSize: "9px", color: t.textGhost, letterSpacing: "0.06em" }}>⌘+Enter to log</span>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!text.trim()}
+            style={{
+              background: text.trim() ? tagInfo.color : "transparent",
+              color: text.trim() ? "#fff" : t.textGhost,
+              border: text.trim() ? "none" : `1px solid ${t.border}`,
+              borderRadius: "5px", padding: "6px 14px", fontSize: "10px",
+              fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "0.08em",
+              cursor: text.trim() ? "pointer" : "not-allowed", fontWeight: 500,
+            }}>
+            + LOG
+          </button>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      {sorted.length === 0 ? (
+        <div style={{
+          textAlign: "center", padding: "20px 8px", color: t.textGhost,
+          fontSize: "10px", letterSpacing: "0.08em", border: `1px dashed ${t.border}`,
+          borderRadius: "6px",
+        }}>
+          NO ACTIVITY YET — LOG YOUR FIRST ENTRY ABOVE
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {sorted.map(entry => {
+            const et = TAG_BY_ID[entry.tag] || TAG_BY_ID.note;
+            return (
+              <div key={entry.id} style={{
+                background: t.inputBg, borderLeft: `3px solid ${et.color}`,
+                border: `1px solid ${t.border}`, borderLeftWidth: "3px",
+                borderRadius: "6px", padding: "10px 12px", position: "relative",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px", gap: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                    <span style={{ fontSize: "11px" }}>{et.icon}</span>
+                    <span style={{ fontSize: "9px", color: et.color, letterSpacing: "0.08em", fontWeight: 600 }}>{et.label.toUpperCase()}</span>
+                    <span style={{ fontSize: "9px", color: t.textGhost, letterSpacing: "0.04em" }}>· {formatEntryTime(entry.timestamp)}</span>
+                  </div>
+                  {onDelete && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm("Delete this entry? Activity log entries can't be edited, only deleted.")) {
+                          onDelete(entry.id);
+                        }
+                      }}
+                      style={{
+                        background: "none", border: "none", color: t.textGhost,
+                        cursor: "pointer", fontSize: "12px", padding: "0 4px", lineHeight: 1,
+                      }}
+                      title="Delete entry">✕</button>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: "12px", color: t.text, fontFamily: "'IBM Plex Mono',monospace",
+                  lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>{entry.text}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function useIsMobile(breakpoint = 700) {
   const [isMobile, setIsMobile] = useState(
@@ -227,6 +435,7 @@ export default function JobTracker() {
   const [headline, setHeadline]       = useState(()=>{ try { return localStorage.getItem("job-tracker-headline")||"DEVOPS & CLOUD"; } catch { return "DEVOPS & CLOUD"; } });
   const [editingHeadline, setEditingHeadline] = useState(false);
   const [headlineDraft, setHeadlineDraft] = useState("");
+  const [formErrors, setFormErrors]   = useState({});
 
   const setJobs = (jobs) => { setJobsRaw(jobs); saveJobs(typeof jobs === "function" ? jobs([]) : jobs); };
   const setIsDark = (v) => { setIsDarkRaw(v); saveSettings({isDark:v, soundOn, view}); };
@@ -251,7 +460,14 @@ export default function JobTracker() {
   const filtered = useMemo(()=>{
     let list=[...jobs];
     if(filterStatus!=="All") list=list.filter(j=>j.status===filterStatus);
-    if(search){const q=search.toLowerCase();list=list.filter(j=>j.company.toLowerCase().includes(q)||j.role.toLowerCase().includes(q)||j.notes.toLowerCase().includes(q));}
+    if(search){
+      const q=search.toLowerCase();
+      list=list.filter(j=>
+        j.company.toLowerCase().includes(q) ||
+        j.role.toLowerCase().includes(q) ||
+        (j.entries||[]).some(e => (e.text||"").toLowerCase().includes(q))
+      );
+    }
     list.sort((a,b)=>{
       if(sortBy==="date") return new Date(b.date)-new Date(a.date);
       if(sortBy==="company") return a.company.localeCompare(b.company);
@@ -273,18 +489,51 @@ export default function JobTracker() {
   };
 
   const handleSubmit = ()=>{
-    if(!form.company||!form.role) return;
-    if(editId!==null){
-      setJobs(jobs.map(j=>j.id===editId?{...form,id:editId}:j)); setEditId(null);
-    } else {
-      setJobs([...jobs,{...form,id:nextId++}]);
+    const errors = validateForm(form);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setToast({ message: "Fix required fields", color: "#FF453A" });
+      return;
     }
-    setForm(emptyForm); setShowForm(false);
+    const cleaned = { ...form, entries: Array.isArray(form.entries) ? form.entries : [] };
+    if(editId!==null){
+      setJobs(jobs.map(j=>j.id===editId?{...cleaned,id:editId}:j)); setEditId(null);
+    } else {
+      setJobs([...jobs,{...cleaned,id:nextId++}]);
+    }
+    setForm(emptyForm); setFormErrors({}); setShowForm(false);
   };
 
-  const handleEdit   = (job)=>{setForm({...job});setEditId(job.id);setShowForm(true);};
+  const updateForm = (key, value) => {
+    setForm(f => ({ ...f, [key]: value }));
+    if (formErrors[key]) {
+      setFormErrors(e => { const n = {...e}; delete n[key]; return n; });
+    }
+  };
+
+  const handleEdit   = (job)=>{
+    setForm({...job, entries: Array.isArray(job.entries) ? job.entries : []});
+    setEditId(job.id);
+    setFormErrors({});
+    setShowForm(true);
+  };
   const handleDelete = (id) =>setJobs(jobs.filter(j=>j.id!==id));
-  const cancelForm   = ()=>{setForm(emptyForm);setEditId(null);setShowForm(false);};
+  const cancelForm   = ()=>{setForm(emptyForm);setFormErrors({});setEditId(null);setShowForm(false);};
+
+  const addEntryToJob = (jobId, tag, text) => {
+    if (!text || !text.trim()) return false;
+    const entry = { id: `e-${Date.now()}-${Math.random().toString(36).slice(2,7)}`, timestamp: new Date().toISOString(), tag, text: text.trim() };
+    setJobs(jobs.map(j => j.id === jobId ? { ...j, entries: [...(j.entries||[]), entry] } : j));
+    // keep modal in sync
+    setNotesJob(prev => prev && prev.id === jobId ? { ...prev, entries: [...(prev.entries||[]), entry] } : prev);
+    setToast({ message: `${TAG_BY_ID[tag]?.icon||"📝"} Logged`, color: TAG_BY_ID[tag]?.color || "#4A9EFF" });
+    return true;
+  };
+
+  const deleteEntryFromJob = (jobId, entryId) => {
+    setJobs(jobs.map(j => j.id === jobId ? { ...j, entries: (j.entries||[]).filter(e => e.id !== entryId) } : j));
+    setNotesJob(prev => prev && prev.id === jobId ? { ...prev, entries: (prev.entries||[]).filter(e => e.id !== entryId) } : prev);
+  };
 
   const toggleSelect = (id) => {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -306,8 +555,13 @@ export default function JobTracker() {
   };
 
   const exportCSV = ()=>{
-    const h=["Company","Role","Date","Status","Source","Salary","Location","Notes"];
-    const rows=jobs.map(j=>[j.company,j.role,j.date,j.status,j.source,j.salary,j.location,`"${j.notes.replace(/"/g,'""')}"`]);
+    const h=["Company","Role","Date","Status","Source","Salary","Location","Activity Log"];
+    const flatten = entries => (entries||[])
+      .slice()
+      .sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp))
+      .map(e=>`[${formatEntryTime(e.timestamp)} ${TAG_BY_ID[e.tag]?.label||"Note"}] ${e.text}`)
+      .join(" || ");
+    const rows=jobs.map(j=>[j.company,j.role,j.date,j.status,j.source,j.salary,j.location,`"${flatten(j.entries).replace(/"/g,'""')}"`]);
     const csv=[h.join(","),...rows.map(r=>r.join(","))].join("\n");
     const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="job-pipeline.csv"; a.click();
     setToast({message:"📥 Exported to CSV",color:"#4A9EFF"});
@@ -482,45 +736,85 @@ export default function JobTracker() {
       )}
 
       {/* Form */}
-      {showForm && (
+      {showForm && (() => {
+        const fieldLabel = (label, required) => (
+          <span style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em"}}>
+            {label}{required && <span style={{color:"#FF453A",marginLeft:"3px"}}>*</span>}
+          </span>
+        );
+        const fieldError = (key) => formErrors[key] ? (
+          <div style={{fontSize:"9px",color:"#FF453A",letterSpacing:"0.06em",marginTop:"4px"}}>{formErrors[key]}</div>
+        ) : null;
+        const errStyle = (key) => formErrors[key] ? { borderColor: "#FF453A" } : {};
+        return (
         <div className="form-overlay" style={{margin:isMobile?"0 16px 14px":"0 28px 16px",background:t.surface,border:`1px solid ${t.borderStrong}`,borderRadius:"8px",padding:isMobile?"16px":"20px"}}>
           <div style={{fontSize:"11px",color:"#4A9EFF",letterSpacing:"0.12em",marginBottom:"16px"}}>{editId?"EDIT ROLE":"NEW APPLICATION"}</div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:"12px"}}>
-            {[{key:"company",label:"COMPANY",placeholder:"e.g. Booz Allen"},{key:"role",label:"ROLE",placeholder:"e.g. Senior DevOps Engineer"},{key:"salary",label:"SALARY RANGE",placeholder:"e.g. $130k–$150k"},{key:"location",label:"LOCATION",placeholder:"Remote / Hybrid / Onsite"}].map(({key,label,placeholder})=>(
+            {[
+              {key:"company",label:"COMPANY",placeholder:"e.g. Booz Allen",required:true},
+              {key:"role",label:"ROLE",placeholder:"e.g. Senior DevOps Engineer",required:true},
+              {key:"salary",label:"SALARY RANGE",placeholder:"e.g. $130k–$150k",required:false},
+              {key:"location",label:"LOCATION",placeholder:"Remote / Hybrid / Onsite",required:false},
+            ].map(({key,label,placeholder,required})=>(
               <div key={key}>
-                <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>{label}</div>
-                <input value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})} placeholder={placeholder} style={inputStyle}/>
+                <div style={{marginBottom:"6px"}}>{fieldLabel(label, required)}</div>
+                <input value={form[key]||""} onChange={e=>updateForm(key, e.target.value)} placeholder={placeholder} style={{...inputStyle, ...errStyle(key)}}/>
+                {fieldError(key)}
               </div>
             ))}
             <div>
-              <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>DATE APPLIED</div>
-              <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{...inputStyle,colorScheme:isDark?"dark":"light"}}/>
+              <div style={{marginBottom:"6px"}}>{fieldLabel("DATE APPLIED", true)}</div>
+              <input type="date" value={form.date||""} onChange={e=>updateForm("date", e.target.value)} style={{...inputStyle,colorScheme:isDark?"dark":"light", ...errStyle("date")}}/>
+              {fieldError("date")}
             </div>
             <div>
-              <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>STATUS</div>
-              <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} style={{...inputStyle,color:STATUS_CONFIG[form.status].color}}>
+              <div style={{marginBottom:"6px"}}>{fieldLabel("STATUS", true)}</div>
+              <select value={form.status||""} onChange={e=>updateForm("status", e.target.value)} style={{...inputStyle,color:STATUS_CONFIG[form.status]?.color||t.text, ...errStyle("status")}}>
                 {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
               </select>
+              {fieldError("status")}
             </div>
             <div>
-              <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>SOURCE</div>
-              <select value={form.source} onChange={e=>setForm({...form,source:e.target.value})} style={inputStyle}>
+              <div style={{marginBottom:"6px"}}>{fieldLabel("SOURCE", true)}</div>
+              <select value={form.source||""} onChange={e=>updateForm("source", e.target.value)} style={{...inputStyle, ...errStyle("source")}}>
                 {SOURCES.map(s=><option key={s} value={s}>{s}</option>)}
               </select>
-            </div>
-            <div style={{gridColumn:"1 / -1"}}>
-              <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>NOTES</div>
-              <textarea value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Recruiter name, interview notes, follow-up needed..." rows={3} style={{...inputStyle,resize:"vertical"}}/>
+              {fieldError("source")}
             </div>
           </div>
-          <div style={{display:"flex",gap:"8px",marginTop:"16px"}}>
+
+          {/* Activity log shown when editing an existing role */}
+          {editId !== null && (
+            <div style={{marginTop:"20px"}}>
+              <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"10px"}}>ACTIVITY LOG</div>
+              <ActivityLog
+                entries={form.entries}
+                theme={t}
+                onAdd={(tag, text) => addEntryToJob(editId, tag, text)}
+                onDelete={(entryId) => deleteEntryFromJob(editId, entryId)}
+              />
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:"8px",marginTop:"16px",flexWrap:"wrap"}}>
             <button onClick={handleSubmit} style={{background:"#4A9EFF",color:"#fff",border:"none",borderRadius:"6px",padding:"9px 20px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",fontWeight:500,letterSpacing:"0.08em",cursor:"pointer"}}>
               {editId?"SAVE CHANGES":"ADD TO PIPELINE"}
             </button>
             <button onClick={cancelForm} style={{background:"transparent",color:t.textFaint,border:`1px solid ${t.borderStrong}`,borderRadius:"6px",padding:"9px 16px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",cursor:"pointer"}}>DISCARD</button>
+            {!editId && Object.keys(formErrors).length > 0 && (
+              <span style={{fontSize:"10px",color:"#FF453A",alignSelf:"center",letterSpacing:"0.06em"}}>
+                Required: {Object.keys(formErrors).join(", ")}
+              </span>
+            )}
           </div>
+          {!editId && (
+            <div style={{fontSize:"10px",color:t.textGhost,marginTop:"12px",letterSpacing:"0.04em",lineHeight:1.5}}>
+              💡 Add the role first, then open it from the list to log calls, interviews, and other activity over time.
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Filters */}
       <div style={{padding:isMobile?"0 16px 12px":"0 28px 12px",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
@@ -550,7 +844,7 @@ export default function JobTracker() {
         <div style={{padding:"0 28px 28px"}}>
           <div style={{display:"grid",gridTemplateColumns:"32px 1fr 1.2fr 100px 120px 110px 1fr 80px",padding:"8px 12px",borderBottom:`1px solid ${t.border}`,fontSize:"9px",color:t.textGhost,letterSpacing:"0.12em",alignItems:"center"}}>
             <div><input type="checkbox" checked={filtered.length>0&&selected.size===filtered.length} onChange={toggleSelectAll}/></div>
-            <div>COMPANY</div><div>ROLE</div><div>DATE</div><div>STATUS</div><div>SOURCE</div><div>NOTES</div><div></div>
+            <div>COMPANY</div><div>ROLE</div><div>DATE</div><div>STATUS</div><div>SOURCE</div><div>ACTIVITY</div><div></div>
           </div>
           {filtered.length===0&&<div style={{textAlign:"center",padding:"40px",color:t.emptyText,fontSize:"12px",letterSpacing:"0.1em"}}>NO APPLICATIONS YET — HIT + ADD ROLE</div>}
           {filtered.map((job,i)=>(
@@ -577,9 +871,26 @@ export default function JobTracker() {
                 </select>
               </div>
               <div style={{fontSize:"10px",color:t.textGhost,letterSpacing:"0.06em",paddingLeft:"4px"}}>{job.source.toUpperCase()}</div>
-              <div onClick={()=>setNotesJob(job)} style={{fontSize:"11px",color:job.notes?t.textFaint:t.textGhost,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",textDecoration:job.notes?"underline dotted":"none"}} title="Click to expand">
-                {job.notes||"—"}
-              </div>
+              {(() => {
+                const entries = job.entries || [];
+                const latest = entries.length > 0
+                  ? [...entries].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0]
+                  : null;
+                const latestTag = latest ? (TAG_BY_ID[latest.tag] || TAG_BY_ID.note) : null;
+                return (
+                  <div onClick={()=>setNotesJob(job)} style={{fontSize:"11px",color:latest?t.textFaint:t.textGhost,overflow:"hidden",cursor:"pointer"}} title="Open activity log">
+                    {latest ? (
+                      <span style={{display:"flex",alignItems:"center",gap:"5px",overflow:"hidden"}}>
+                        <span style={{flexShrink:0,fontSize:"11px"}}>{latestTag.icon}</span>
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:"underline dotted"}}>{latest.text}</span>
+                        {entries.length > 1 && <span style={{flexShrink:0,fontSize:"9px",color:t.textGhost,letterSpacing:"0.04em"}}>+{entries.length-1}</span>}
+                      </span>
+                    ) : (
+                      <span style={{textDecoration:"underline dotted"}}>+ Log activity</span>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{display:"flex",gap:"2px",justifyContent:"flex-end"}}>
                 <button className="edit-btn" onClick={()=>handleEdit(job)} style={{color:t.textMuted}}>EDIT</button>
                 <button className="del-btn" onClick={()=>handleDelete(job.id)}>✕</button>
@@ -628,11 +939,25 @@ export default function JobTracker() {
                   {job.location&&<span>· {job.location}</span>}
                   {job.source&&<span>· {job.source.toUpperCase()}</span>}
                 </div>
-                {job.notes&&(
-                  <div style={{fontSize:"11px",color:t.textMuted,marginTop:"8px",lineHeight:1.5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
-                    {job.notes}
-                  </div>
-                )}
+                {(() => {
+                  const entries = job.entries || [];
+                  if (entries.length === 0) return null;
+                  const latest = [...entries].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
+                  const latestTag = TAG_BY_ID[latest.tag] || TAG_BY_ID.note;
+                  return (
+                    <div style={{marginTop:"8px",padding:"8px 10px",background:t.inputBg,borderLeft:`2px solid ${latestTag.color}`,borderRadius:"4px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"3px"}}>
+                        <span style={{fontSize:"10px"}}>{latestTag.icon}</span>
+                        <span style={{fontSize:"9px",color:latestTag.color,letterSpacing:"0.06em",fontWeight:600}}>{latestTag.label.toUpperCase()}</span>
+                        <span style={{fontSize:"9px",color:t.textGhost}}>· {formatEntryTime(latest.timestamp)}</span>
+                        {entries.length > 1 && <span style={{marginLeft:"auto",fontSize:"9px",color:t.textGhost,letterSpacing:"0.04em"}}>+{entries.length-1} more</span>}
+                      </div>
+                      <div style={{fontSize:"11px",color:t.textMuted,lineHeight:1.4,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
+                        {latest.text}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"10px",paddingTop:"10px",borderTop:`1px solid ${t.border}`}}>
                   <label onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"10px",color:t.textFaint,letterSpacing:"0.06em",cursor:"pointer"}}>
                     <input type="checkbox" checked={isSel} onChange={()=>toggleSelect(job.id)}/>
@@ -643,7 +968,7 @@ export default function JobTracker() {
                       EDIT
                     </button>
                     <button onClick={e=>{e.stopPropagation();setNotesJob(job);}} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:"5px",padding:"6px 12px",fontSize:"10px",color:cfg.color,fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.06em",cursor:"pointer"}}>
-                      NOTES
+                      + LOG
                     </button>
                   </div>
                 </div>
@@ -677,8 +1002,12 @@ export default function JobTracker() {
                     {job.location&&<div style={{fontSize:"10px",color:t.textFaint}}>{job.location}</div>}
                     <div style={{display:"flex",justifyContent:"space-between",marginTop:"8px",alignItems:"center"}}>
                       <span style={{fontSize:"9px",color:t.textGhost}}>{job.date}</span>
-                      <div style={{display:"flex",gap:"6px"}}>
-                        {job.notes&&<span onClick={()=>setNotesJob(job)} style={{fontSize:"9px",color:cfg.color,cursor:"pointer",textDecoration:"underline dotted"}}>notes</span>}
+                      <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+                        {(job.entries||[]).length>0 && (
+                          <span onClick={()=>setNotesJob(job)} style={{fontSize:"9px",color:cfg.color,cursor:"pointer",textDecoration:"underline dotted"}}>
+                            log ({(job.entries||[]).length})
+                          </span>
+                        )}
                         <span onClick={()=>handleEdit(job)} style={{fontSize:"9px",color:t.textFaint,cursor:"pointer"}}>edit</span>
                         <span onClick={()=>handleDelete(job.id)} style={{fontSize:"9px",color:"#FF453A",cursor:"pointer"}}>✕</span>
                       </div>
@@ -714,7 +1043,7 @@ export default function JobTracker() {
                   setNotesJob(updated);
                   setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
                   if(soundOn) playSound(e.target.value);
-                }} style={{...inputStyle,color:STATUS_CONFIG[notesJob.status].color,fontWeight:500}}>
+                }} style={{...inputStyle,color:STATUS_CONFIG[notesJob.status]?.color||t.text,fontWeight:500}}>
                   {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
@@ -746,14 +1075,19 @@ export default function JobTracker() {
               </div>
             </div>
 
-            <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>NOTES</div>
-            <textarea value={notesJob.notes||""} onChange={e=>{
-              const updated={...notesJob,notes:e.target.value};
-              setNotesJob(updated);
-              setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
-            }}
-              rows={isMobile?5:6} placeholder="Recruiter name, interview notes, follow-up needed..."
-              style={{width:"100%",background:t.inputBg,border:`1px solid ${t.borderStrong}`,borderRadius:"6px",padding:"10px 12px",color:t.text,fontSize:"12px",fontFamily:"'IBM Plex Mono',monospace",resize:"vertical",outline:"none",lineHeight:1.6}}/>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"8px"}}>
+              <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em"}}>ACTIVITY LOG</div>
+              {(notesJob.entries||[]).length > 0 && (
+                <div style={{fontSize:"9px",color:t.textGhost,letterSpacing:"0.06em"}}>{(notesJob.entries||[]).length} {(notesJob.entries||[]).length===1?"entry":"entries"}</div>
+              )}
+            </div>
+            <ActivityLog
+              entries={notesJob.entries}
+              theme={t}
+              compact={isMobile}
+              onAdd={(tag, text) => addEntryToJob(notesJob.id, tag, text)}
+              onDelete={(entryId) => deleteEntryFromJob(notesJob.id, entryId)}
+            />
 
             <div style={{display:"flex",gap:"8px",marginTop:"16px",flexWrap:"wrap"}}>
               <button onClick={()=>{setNotesJob(null);handleEdit(notesJob);}}
