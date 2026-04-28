@@ -185,7 +185,25 @@ const emptyForm = {company:"",role:"",date:new Date().toISOString().split("T")[0
 
 let nextId = Date.now();
 
+function useIsMobile(breakpoint = 700) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const handler = e => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", handler);
+    else mq.addListener(handler);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", handler);
+      else mq.removeListener(handler);
+    };
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function JobTracker() {
+  const isMobile = useIsMobile();
   const [jobs, setJobsRaw]            = useState(loadJobs);
   const settings                       = useMemo(loadSettings,[]);
   const [form, setForm]               = useState(emptyForm);
@@ -378,7 +396,7 @@ export default function JobTracker() {
       </div>
 
       {/* Header */}
-      <div style={{borderBottom:`1px solid ${t.border}`,padding:"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+      <div style={{borderBottom:`1px solid ${t.border}`,padding:isMobile?"14px 16px":"16px 28px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
         <div>
           {editingHeadline ? (
             <div style={{display:"flex",alignItems:"center",gap:"6px",marginBottom:"4px"}}>
@@ -444,7 +462,7 @@ export default function JobTracker() {
       </div>
 
       {/* Stats */}
-      <div style={{display:"flex",padding:"14px 28px",overflowX:"auto",gap:"8px"}}>
+      <div style={{display:"flex",padding:isMobile?"12px 16px":"14px 28px",overflowX:"auto",gap:"8px"}}>
         {[{label:"TOTAL",value:stats.total,color:t.text},...STATUSES.map(s=>({label:s.toUpperCase(),value:stats[s],color:STATUS_CONFIG[s].color}))].map(({label,value,color})=>(
           <div key={label} className="stat-card"
             onClick={()=>setFilterStatus(label==="TOTAL"?"All":label.charAt(0)+label.slice(1).toLowerCase())}
@@ -457,7 +475,7 @@ export default function JobTracker() {
 
       {/* Roast */}
       {roastText && (
-        <div className="roast-box" style={{margin:"0 28px 14px",background:"rgba(255,69,58,0.08)",border:"1px solid rgba(255,69,58,0.25)",borderRadius:"8px",padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"12px"}}>
+        <div className="roast-box" style={{margin:isMobile?"0 16px 12px":"0 28px 14px",background:"rgba(255,69,58,0.08)",border:"1px solid rgba(255,69,58,0.25)",borderRadius:"8px",padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"12px"}}>
           <span style={{fontSize:"12px",color:"#FF453A",letterSpacing:"0.04em",lineHeight:1.5}}>🔥 {roastText}</span>
           <button onClick={()=>setRoastText(null)} style={{background:"none",border:"none",color:"rgba(255,69,58,0.5)",cursor:"pointer",fontSize:"14px",flexShrink:0}}>✕</button>
         </div>
@@ -465,9 +483,9 @@ export default function JobTracker() {
 
       {/* Form */}
       {showForm && (
-        <div className="form-overlay" style={{margin:"0 28px 16px",background:t.surface,border:`1px solid ${t.borderStrong}`,borderRadius:"8px",padding:"20px"}}>
+        <div className="form-overlay" style={{margin:isMobile?"0 16px 14px":"0 28px 16px",background:t.surface,border:`1px solid ${t.borderStrong}`,borderRadius:"8px",padding:isMobile?"16px":"20px"}}>
           <div style={{fontSize:"11px",color:"#4A9EFF",letterSpacing:"0.12em",marginBottom:"16px"}}>{editId?"EDIT ROLE":"NEW APPLICATION"}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:"12px"}}>
             {[{key:"company",label:"COMPANY",placeholder:"e.g. Booz Allen"},{key:"role",label:"ROLE",placeholder:"e.g. Senior DevOps Engineer"},{key:"salary",label:"SALARY RANGE",placeholder:"e.g. $130k–$150k"},{key:"location",label:"LOCATION",placeholder:"Remote / Hybrid / Onsite"}].map(({key,label,placeholder})=>(
               <div key={key}>
                 <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>{label}</div>
@@ -505,9 +523,9 @@ export default function JobTracker() {
       )}
 
       {/* Filters */}
-      <div style={{padding:"0 28px 12px",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{padding:isMobile?"0 16px 12px":"0 28px 12px",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..."
-          style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:"6px",padding:"7px 12px",color:t.text,fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",width:"180px",outline:"none"}}/>
+          style={{background:t.surface,border:`1px solid ${t.border}`,borderRadius:"6px",padding:"7px 12px",color:t.text,fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",width:isMobile?"100%":"180px",outline:"none"}}/>
         <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
           {["All",...STATUSES].map(s=>(
             <button key={s} className="filter-btn" onClick={()=>setFilterStatus(s)} style={{
@@ -527,8 +545,8 @@ export default function JobTracker() {
         )}
       </div>
 
-      {/* TABLE */}
-      {view==="table"&&(
+      {/* TABLE / CARD LIST */}
+      {view==="table"&&!isMobile&&(
         <div style={{padding:"0 28px 28px"}}>
           <div style={{display:"grid",gridTemplateColumns:"32px 1fr 1.2fr 100px 120px 110px 1fr 80px",padding:"8px 12px",borderBottom:`1px solid ${t.border}`,fontSize:"9px",color:t.textGhost,letterSpacing:"0.12em",alignItems:"center"}}>
             <div><input type="checkbox" checked={filtered.length>0&&selected.size===filtered.length} onChange={toggleSelectAll}/></div>
@@ -571,16 +589,80 @@ export default function JobTracker() {
         </div>
       )}
 
+      {/* MOBILE CARD LIST */}
+      {view==="table"&&isMobile&&(
+        <div style={{padding:"0 16px 28px"}}>
+          {filtered.length>0&&(
+            <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 4px 10px",fontSize:"10px",color:t.textGhost,letterSpacing:"0.1em"}}>
+              <input type="checkbox" checked={selected.size===filtered.length} onChange={toggleSelectAll}/>
+              <span>{selected.size>0?`${selected.size} SELECTED`:"SELECT ALL"}</span>
+              <span style={{marginLeft:"auto"}}>{filtered.length} {filtered.length===1?"ROLE":"ROLES"}</span>
+            </div>
+          )}
+          {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 16px",color:t.emptyText,fontSize:"12px",letterSpacing:"0.1em",lineHeight:1.6}}>NO APPLICATIONS YET<br/>TAP + ADD ROLE</div>}
+          {filtered.map(job=>{
+            const cfg=STATUS_CONFIG[job.status];
+            const isSel=selected.has(job.id);
+            return (
+              <div key={job.id}
+                onClick={()=>setNotesJob(job)}
+                style={{
+                  background:isSel?cfg.bg:t.surface,
+                  border:`1px solid ${isSel?cfg.color+"60":t.border}`,
+                  borderLeft:`3px solid ${cfg.color}`,
+                  borderRadius:"8px",padding:"14px",marginBottom:"10px",
+                  cursor:"pointer",WebkitTapHighlightColor:"transparent"
+                }}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"10px",marginBottom:"8px"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:"15px",fontWeight:600,fontFamily:"'IBM Plex Sans',sans-serif",color:t.text,lineHeight:1.3}}>{job.company}</div>
+                    <div style={{fontSize:"12px",color:t.textMuted,marginTop:"2px",lineHeight:1.4}}>{job.role}</div>
+                  </div>
+                  <span style={{fontSize:"10px",background:cfg.bg,color:cfg.color,padding:"3px 9px",borderRadius:"4px",letterSpacing:"0.06em",fontWeight:500,whiteSpace:"nowrap",flexShrink:0}}>
+                    {job.status}
+                  </span>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"10px",fontSize:"10px",color:t.textFaint,letterSpacing:"0.04em"}}>
+                  <span>{job.date}</span>
+                  {job.salary&&<span>· {job.salary}</span>}
+                  {job.location&&<span>· {job.location}</span>}
+                  {job.source&&<span>· {job.source.toUpperCase()}</span>}
+                </div>
+                {job.notes&&(
+                  <div style={{fontSize:"11px",color:t.textMuted,marginTop:"8px",lineHeight:1.5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
+                    {job.notes}
+                  </div>
+                )}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"10px",paddingTop:"10px",borderTop:`1px solid ${t.border}`}}>
+                  <label onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"10px",color:t.textFaint,letterSpacing:"0.06em",cursor:"pointer"}}>
+                    <input type="checkbox" checked={isSel} onChange={()=>toggleSelect(job.id)}/>
+                    SELECT
+                  </label>
+                  <div style={{display:"flex",gap:"6px"}}>
+                    <button onClick={e=>{e.stopPropagation();handleEdit(job);}} style={{background:"transparent",border:`1px solid ${t.border}`,borderRadius:"5px",padding:"6px 12px",fontSize:"10px",color:t.textMuted,fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.06em",cursor:"pointer"}}>
+                      EDIT
+                    </button>
+                    <button onClick={e=>{e.stopPropagation();setNotesJob(job);}} style={{background:cfg.bg,border:`1px solid ${cfg.color}40`,borderRadius:"5px",padding:"6px 12px",fontSize:"10px",color:cfg.color,fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.06em",cursor:"pointer"}}>
+                      NOTES
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* KANBAN */}
       {view==="kanban"&&(
-        <div style={{padding:"0 28px 28px",display:"flex",gap:"12px",overflowX:"auto",alignItems:"flex-start"}}>
+        <div style={{padding:isMobile?"0 16px 28px":"0 28px 28px",display:"flex",flexDirection:isMobile?"column":"row",gap:"12px",overflowX:isMobile?"visible":"auto",alignItems:"flex-start"}}>
           {STATUSES.map(status=>{
             const colJobs=jobs.filter(j=>j.status===status&&(filterStatus==="All"||filterStatus===status));
             const cfg=STATUS_CONFIG[status]; const isOver=dragOver===status;
             return(
               <div key={status} className="kanban-col"
                 onDragOver={e=>handleDragOver(e,status)} onDrop={e=>handleDrop(e,status)}
-                style={{flex:"0 0 220px",minWidth:"220px",background:isOver?cfg.bg:t.surface,border:`1px solid ${isOver?cfg.color:t.border}`,borderRadius:"8px",padding:"12px",minHeight:"300px"}}>
+                style={{flex:isMobile?"1 1 auto":"0 0 220px",width:isMobile?"100%":undefined,minWidth:isMobile?undefined:"220px",background:isOver?cfg.bg:t.surface,border:`1px solid ${isOver?cfg.color:t.border}`,borderRadius:"8px",padding:"12px",minHeight:isMobile?"auto":"300px"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
                   <span style={{fontSize:"10px",color:cfg.color,letterSpacing:"0.1em",fontWeight:600}}>{status.toUpperCase()}</span>
                   <span style={{fontSize:"11px",color:t.textFaint,background:cfg.bg,borderRadius:"4px",padding:"1px 7px"}}>{colJobs.length}</span>
@@ -609,27 +691,86 @@ export default function JobTracker() {
         </div>
       )}
 
-      {/* Notes Modal */}
+      {/* Notes / Edit Sheet */}
       {notesJob&&(
-        <div className="modal-overlay" style={{background:t.overlay}} onClick={()=>setNotesJob(null)}>
-          <div className="modal-box" style={{background:t.surface,border:`1px solid ${t.borderStrong}`,borderRadius:"10px",padding:"24px"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px"}}>
-              <div>
-                <div style={{fontSize:"16px",fontWeight:600,fontFamily:"'IBM Plex Sans',sans-serif",color:t.text}}>{notesJob.company}</div>
-                <div style={{fontSize:"11px",color:t.textMuted,marginTop:"3px"}}>{notesJob.role}</div>
-                <div style={{display:"flex",gap:"8px",marginTop:"6px",flexWrap:"wrap"}}>
-                  <span style={{fontSize:"10px",background:STATUS_CONFIG[notesJob.status].bg,color:STATUS_CONFIG[notesJob.status].color,padding:"2px 8px",borderRadius:"4px"}}>{notesJob.status}</span>
-                  {notesJob.salary&&<span style={{fontSize:"10px",color:t.textFaint}}>{notesJob.salary}</span>}
-                  {notesJob.location&&<span style={{fontSize:"10px",color:t.textFaint}}>{notesJob.location}</span>}
-                </div>
+        <div className="modal-overlay" style={{background:t.overlay,alignItems:isMobile?"flex-end":"center"}} onClick={()=>setNotesJob(null)}>
+          <div className="modal-box" style={{background:t.surface,border:`1px solid ${t.borderStrong}`,borderRadius:isMobile?"14px 14px 0 0":"10px",padding:isMobile?"20px 18px 28px":"24px",width:isMobile?"100%":undefined,maxWidth:isMobile?"100%":"520px",maxHeight:isMobile?"90vh":"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            {isMobile&&<div style={{width:"40px",height:"4px",background:t.borderStrong,borderRadius:"2px",margin:"-4px auto 14px"}}/>}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px",gap:"12px"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:"17px",fontWeight:600,fontFamily:"'IBM Plex Sans',sans-serif",color:t.text,lineHeight:1.3}}>{notesJob.company}</div>
+                <div style={{fontSize:"12px",color:t.textMuted,marginTop:"3px",lineHeight:1.4}}>{notesJob.role}</div>
+                <div style={{fontSize:"10px",color:t.textGhost,marginTop:"6px",letterSpacing:"0.04em"}}>Applied {notesJob.date}</div>
               </div>
-              <button onClick={()=>setNotesJob(null)} style={{background:"none",border:"none",color:t.textFaint,cursor:"pointer",fontSize:"18px",lineHeight:1}}>✕</button>
+              <button onClick={()=>setNotesJob(null)} style={{background:"none",border:"none",color:t.textFaint,cursor:"pointer",fontSize:"22px",lineHeight:1,padding:"0 4px"}}>✕</button>
             </div>
-            <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"8px"}}>NOTES</div>
-            <textarea defaultValue={notesJob.notes} onChange={e=>{const updated={...notesJob,notes:e.target.value};setNotesJob(updated);setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));}}
-              rows={6} placeholder="Add notes here..."
+
+            {/* Quick edit row: STATUS + SOURCE */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"14px"}}>
+              <div>
+                <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"5px"}}>STATUS</div>
+                <select value={notesJob.status} onChange={e=>{
+                  const updated={...notesJob,status:e.target.value};
+                  setNotesJob(updated);
+                  setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
+                  if(soundOn) playSound(e.target.value);
+                }} style={{...inputStyle,color:STATUS_CONFIG[notesJob.status].color,fontWeight:500}}>
+                  {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"5px"}}>SOURCE</div>
+                <select value={notesJob.source} onChange={e=>{
+                  const updated={...notesJob,source:e.target.value};
+                  setNotesJob(updated);
+                  setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
+                }} style={inputStyle}>
+                  {SOURCES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"5px"}}>SALARY</div>
+                <input value={notesJob.salary||""} placeholder="e.g. $150k" onChange={e=>{
+                  const updated={...notesJob,salary:e.target.value};
+                  setNotesJob(updated);
+                  setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
+                }} style={inputStyle}/>
+              </div>
+              <div>
+                <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"5px"}}>LOCATION</div>
+                <input value={notesJob.location||""} placeholder="Remote / Hybrid / Onsite" onChange={e=>{
+                  const updated={...notesJob,location:e.target.value};
+                  setNotesJob(updated);
+                  setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
+                }} style={inputStyle}/>
+              </div>
+            </div>
+
+            <div style={{fontSize:"9px",color:t.textFaint,letterSpacing:"0.12em",marginBottom:"6px"}}>NOTES</div>
+            <textarea value={notesJob.notes||""} onChange={e=>{
+              const updated={...notesJob,notes:e.target.value};
+              setNotesJob(updated);
+              setJobs(jobs.map(j=>j.id===notesJob.id?updated:j));
+            }}
+              rows={isMobile?5:6} placeholder="Recruiter name, interview notes, follow-up needed..."
               style={{width:"100%",background:t.inputBg,border:`1px solid ${t.borderStrong}`,borderRadius:"6px",padding:"10px 12px",color:t.text,fontSize:"12px",fontFamily:"'IBM Plex Mono',monospace",resize:"vertical",outline:"none",lineHeight:1.6}}/>
-            <div style={{fontSize:"9px",color:t.textGhost,marginTop:"8px"}}>Applied {notesJob.date} · via {notesJob.source}</div>
+
+            <div style={{display:"flex",gap:"8px",marginTop:"16px",flexWrap:"wrap"}}>
+              <button onClick={()=>{setNotesJob(null);handleEdit(notesJob);}}
+                style={{flex:"1 1 auto",background:"#4A9EFF",color:"#fff",border:"none",borderRadius:"6px",padding:"11px 16px",fontSize:"11px",fontFamily:"'IBM Plex Mono',monospace",fontWeight:500,letterSpacing:"0.06em",cursor:"pointer"}}>
+                EDIT ALL FIELDS
+              </button>
+              <button onClick={()=>{
+                if(window.confirm(`Delete ${notesJob.company} – ${notesJob.role}?`)){
+                  handleDelete(notesJob.id);
+                  setNotesJob(null);
+                }
+              }}
+                style={{background:"rgba(255,69,58,0.1)",border:"1px solid rgba(255,69,58,0.3)",borderRadius:"6px",padding:"11px 14px",fontSize:"11px",color:"#FF453A",fontFamily:"'IBM Plex Mono',monospace",letterSpacing:"0.06em",cursor:"pointer"}}>
+                🗑 DELETE
+              </button>
+            </div>
+            <div style={{fontSize:"9px",color:t.textGhost,marginTop:"10px",textAlign:"center",letterSpacing:"0.06em"}}>Changes save automatically</div>
           </div>
         </div>
       )}
